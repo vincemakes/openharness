@@ -24,23 +24,27 @@ The key difference from prompt-only workflow tools: OpenHarness uses `PreToolUse
 
 ```bash
 git clone https://github.com/vincemakes/openharness.git ~/openharness
-~/openharness/bin/openharness install claude-code
+export PATH="$HOME/openharness/bin:$PATH"  # add to your shell profile
+cd /path/to/your/project
+openharness init
 ```
 
-Restart Claude Code after installation.
+Restart Claude Code after `init`. The init command creates `.claude/settings.local.json` with hook configuration that Claude Code picks up on next session.
 
 ### Codex
 
 ```bash
 git clone https://github.com/vincemakes/openharness.git ~/openharness
 ~/openharness/bin/openharness install codex
+cd /path/to/your/project
+openharness init
 ```
 
 Restart Codex after installation.
 
 ### Verify Installation
 
-Start a new session and ask your agent to implement something. It should automatically detect OpenHarness and route the work through the task lifecycle.
+Start a new Claude Code session in an initialized repo. The session-start hook should report OpenHarness status. Ask the agent to implement something — it should automatically route the work through the task lifecycle.
 
 ## Initialize a Repository
 
@@ -49,7 +53,10 @@ cd /path/to/your/project
 openharness init
 ```
 
-This creates `.openharness/` with configuration, rules, and a tasks directory. It also adds an OpenHarness section to your `AGENTS.md`.
+This creates:
+- `.openharness/` — configuration, rules, and tasks directory
+- `.claude/settings.local.json` — hook configuration for Claude Code
+- `AGENTS.md` section — agent instructions for the harness lifecycle
 
 ## The Development Loop
 

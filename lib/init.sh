@@ -70,8 +70,50 @@ See \`.openharness/RULES.md\` for enforcement rules."
     echo "Created: AGENTS.md"
   fi
 
+  # Claude Code hooks integration via .claude/settings.local.json
+  local claude_settings_dir="$repo_root/.claude"
+  local claude_local="$claude_settings_dir/settings.local.json"
+  mkdir -p "$claude_settings_dir"
+
+  if [ -f "$claude_local" ]; then
+    if ! grep -q 'pre-tool-use' "$claude_local" 2>/dev/null; then
+      echo "Warning: .claude/settings.local.json exists but has no OpenHarness hooks." >&2
+      echo "Add hooks manually or remove the file and re-run init." >&2
+    fi
+  else
+    cat > "$claude_local" <<EOJSON
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$OPENHARNESS_ROOT/hooks/pre-tool-use"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$OPENHARNESS_ROOT/hooks/session-start"
+          }
+        ]
+      }
+    ]
+  }
+}
+EOJSON
+    echo "Created: .claude/settings.local.json (hooks)"
+  fi
+
   echo "Created: .openharness/"
   echo "Updated: .gitignore"
   echo ""
-  echo "Ready. Run 'openharness start-task \"<goal>\"' to begin."
+  echo "Ready. Restart Claude Code, then run 'openharness start-task \"<goal>\"' to begin."
 }
