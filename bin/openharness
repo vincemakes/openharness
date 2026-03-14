@@ -1,0 +1,79 @@
+#!/bin/sh
+set -eu
+
+# OpenHarness — local development harness for Claude Code and Codex
+# CLI is the only state mutation entrypoint.
+
+OPENHARNESS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# shellcheck source=lib/install.sh
+. "$OPENHARNESS_ROOT/lib/install.sh"
+# shellcheck source=lib/init.sh
+. "$OPENHARNESS_ROOT/lib/init.sh"
+# shellcheck source=lib/task.sh
+. "$OPENHARNESS_ROOT/lib/task.sh"
+
+usage() {
+  cat <<'EOF'
+Usage: openharness <command> [args]
+
+Commands:
+  install <platform>    Install global assets (claude-code | codex)
+  init                  Initialize current repo for OpenHarness
+  start-task "<goal>"   Create a new task
+  advance               Advance task state (intake->planning->implementing)
+  status                Show active task state
+  verify                Run verification and record evidence
+  handoff               Produce final handoff summary
+
+Options:
+  --help, -h            Show this help
+  --version             Show version
+EOF
+}
+
+version() {
+  echo "openharness 0.1.0"
+}
+
+case "${1:-}" in
+  install)
+    shift
+    oh_install "$@"
+    ;;
+  init)
+    shift
+    oh_init "$@"
+    ;;
+  start-task)
+    shift
+    oh_start_task "$@"
+    ;;
+  advance)
+    shift
+    oh_advance "$@"
+    ;;
+  status)
+    shift
+    oh_status "$@"
+    ;;
+  verify)
+    shift
+    oh_verify "$@"
+    ;;
+  handoff)
+    shift
+    oh_handoff "$@"
+    ;;
+  --version|-v)
+    version
+    ;;
+  --help|-h|"")
+    usage
+    ;;
+  *)
+    echo "openharness: unknown command '$1'" >&2
+    usage >&2
+    exit 1
+    ;;
+esac

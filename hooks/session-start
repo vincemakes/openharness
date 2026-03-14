@@ -1,0 +1,39 @@
+#!/bin/sh
+# OpenHarness session-start hook
+# Injects harness awareness context when a Claude Code session starts.
+
+set -eu
+
+OPENHARNESS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Check if repo is OpenHarness-initialized
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+INIT_STATUS="not initialized"
+ACTIVE_TASK=""
+
+if [ -n "$REPO_ROOT" ] && [ -d "$REPO_ROOT/.openharness" ]; then
+  INIT_STATUS="initialized"
+  # Check for active task
+  TASKS_DIR="$REPO_ROOT/.openharness/tasks"
+  if [ -d "$TASKS_DIR" ]; then
+    LATEST="$(ls -1t "$TASKS_DIR" 2>/dev/null | head -1)"
+    if [ -n "$LATEST" ] && [ -f "$TASKS_DIR/$LATEST/status.json" ]; then
+      STATUS="$(sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TASKS_DIR/$LATEST/status.json" | head -1)"
+      ACTIVE_TASK="$LATEST (status: $STATUS)"
+    fi
+  fi
+fi
+
+# Build context message — plain text, no complex escaping needed
+if [ "$INIT_STATUS" = "initialized" ]; then
+  if [ -n "$ACTIVE_TASK" ]; then
+    CTX="[OpenHarness] Repo initialized. Active task: $ACTIVE_TASK. Run 'openharness status' for details. Use the 'openharness-task' skill for lifecycle guidance."
+  else
+    CTX="[OpenHarness] Repo initialized. No active task. Run: openharness start-task <goal>"
+  fi
+else
+  CTX="[OpenHarness] Available but repo not initialized. Run: openharness init"
+fi
+
+# Output JSON — simple string, no markdown escaping issues
+printf '{"hookSpecificOutput":{"additionalContext":"%s"}}' "$CTX"

@@ -1,0 +1,7 @@
+{
+  "name": "openharness",
+  "version": "0.1.0",
+  "description": "Local development harness for Claude Code and Codex — enforced task lifecycle with repo-local evidence",
+  "author": "openharness",
+  "homepage": "https://github.com/user/openharness"
+}

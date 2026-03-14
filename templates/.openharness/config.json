@@ -1,0 +1,4 @@
+{
+  "verify_command": "echo 'No verify command configured. Edit .openharness/config.json'",
+  "max_verify_attempts": 3
+}

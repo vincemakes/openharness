@@ -1,0 +1,3 @@
+# OpenHarness — local task artifacts
+.openharness/tasks/*/status.json
+.openharness/tasks/*/verify.md
