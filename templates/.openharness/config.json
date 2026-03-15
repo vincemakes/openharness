@@ -2,5 +2,10 @@
   "verify_command": "echo 'No verify command configured. Edit .openharness/config.json'",
   "cleanup_command": "",
   "max_verify_attempts": 3,
-  "pr_base_branch": "main"
+  "pr_base_branch": "main",
+  "interactive_verify": {
+    "dev_server_command": "",
+    "dev_server_url": "",
+    "dev_server_timeout": 30
+  }
 }

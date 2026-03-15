@@ -16,6 +16,10 @@ OPENHARNESS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "$OPENHARNESS_ROOT/lib/worktree.sh"
 # shellcheck source=lib/delivery.sh
 . "$OPENHARNESS_ROOT/lib/delivery.sh"
+# shellcheck source=lib/interactive.sh
+. "$OPENHARNESS_ROOT/lib/interactive.sh"
+# shellcheck source=lib/maintain.sh
+. "$OPENHARNESS_ROOT/lib/maintain.sh"
 
 usage() {
   cat <<'EOF'
@@ -29,7 +33,10 @@ Commands:
   status                Show active task state
   verify                Run verification and record evidence
   handoff               Produce final handoff summary
+  interactive-verify    Interactive browser-based verification (start|complete)
   worktree [sub]        Manage git worktree (create|remove|status)
+  maintain              Scan tasks for stale/blocked items
+  gc [--purge]          Clean up worktrees for terminal tasks
   cleanup               Run cleanup commands (lint, format)
   commit                Auto-commit with generated message
   pr                    Create PR or draft from task
@@ -41,7 +48,7 @@ EOF
 }
 
 version() {
-  echo "openharness 0.1.0"
+  echo "openharness 0.2.0"
 }
 
 case "${1:-}" in
@@ -73,9 +80,21 @@ case "${1:-}" in
     shift
     oh_handoff "$@"
     ;;
+  interactive-verify)
+    shift
+    oh_interactive_verify "$@"
+    ;;
   worktree)
     shift
     oh_worktree "$@"
+    ;;
+  maintain)
+    shift
+    oh_maintain "$@"
+    ;;
+  gc)
+    shift
+    oh_gc "$@"
     ;;
   cleanup)
     shift

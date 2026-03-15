@@ -1,7 +1,8 @@
 {
   "name": "openharness",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local development harness for Claude Code and Codex — enforced task lifecycle with repo-local evidence",
   "author": "openharness",
-  "homepage": "https://github.com/user/openharness"
+  "homepage": "https://github.com/user/openharness",
+  "tags": ["task-lifecycle", "delivery-pipeline", "browser-testing", "playwright"]
 }

@@ -41,10 +41,10 @@ oh_init() {
   local gitignore="$repo_root/.gitignore"
   if [ -f "$gitignore" ]; then
     if ! grep -q '.openharness/tasks/*/status.json' "$gitignore" 2>/dev/null; then
-      printf '\n# OpenHarness — local task artifacts\n.openharness/tasks/*/status.json\n.openharness/tasks/*/status.json.tmp\n.openharness/tasks/*/verify.md\n.openharness/active-task\n' >> "$gitignore"
+      printf '\n# OpenHarness — local task artifacts\n.openharness/tasks/*/status.json\n.openharness/tasks/*/status.json.tmp\n.openharness/tasks/*/verify.md\n.openharness/tasks/*/screenshots/\n.openharness/tasks/*/.dev-server.pid\n.openharness/active-task\n' >> "$gitignore"
     fi
   else
-    printf '# OpenHarness — local task artifacts\n.openharness/tasks/*/status.json\n.openharness/tasks/*/status.json.tmp\n.openharness/tasks/*/verify.md\n.openharness/active-task\n' > "$gitignore"
+    printf '# OpenHarness — local task artifacts\n.openharness/tasks/*/status.json\n.openharness/tasks/*/status.json.tmp\n.openharness/tasks/*/verify.md\n.openharness/tasks/*/screenshots/\n.openharness/tasks/*/.dev-server.pid\n.openharness/active-task\n' > "$gitignore"
   fi
 
   # AGENTS.md integration
@@ -114,6 +114,21 @@ EOJSON
 
   echo "Created: .openharness/"
   echo "Updated: .gitignore"
+
+  # Check for Playwright MCP availability
+  local playwright_detected=false
+  if [ -f "$claude_local" ] && grep -q 'playwright' "$claude_local" 2>/dev/null; then
+    playwright_detected=true
+  elif [ -f "$repo_root/.claude/settings.json" ] && grep -q 'playwright' "$repo_root/.claude/settings.json" 2>/dev/null; then
+    playwright_detected=true
+  fi
+
+  if [ "$playwright_detected" = "true" ]; then
+    echo "Playwright MCP detected — interactive verification available."
+  else
+    echo "Tip: Add Playwright MCP server for interactive browser verification."
+  fi
+
   echo ""
   echo "Ready. Restart Claude Code, then run 'openharness start-task \"<goal>\"' to begin."
 }

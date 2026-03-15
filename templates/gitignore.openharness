@@ -2,4 +2,6 @@
 .openharness/tasks/*/status.json
 .openharness/tasks/*/status.json.tmp
 .openharness/tasks/*/verify.md
+.openharness/tasks/*/screenshots/
+.openharness/tasks/*/.dev-server.pid
 .openharness/active-task

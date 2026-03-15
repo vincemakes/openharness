@@ -282,6 +282,23 @@ EOF
 <!-- Must be one of: ready_for_human_review | blocked -->
 EOF
 
+  # Generate verify-interactive.md if interactive verify is configured
+  local root_for_config
+  root_for_config="$(_oh_repo_root)"
+  local iv_cmd
+  iv_cmd="$(sed -n 's/.*"dev_server_command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$root_for_config/.openharness/config.json" | head -1)"
+  if [ -n "$iv_cmd" ]; then
+    cat > "$task_dir/verify-interactive.md" <<EOF
+# Interactive Verification Steps
+
+## Steps
+
+1. Navigate to the app
+2. (add your steps here)
+EOF
+    echo "Created: verify-interactive.md (interactive verification configured)"
+  fi
+
   echo "Task created: $task_id"
   echo "Status: intake"
   echo "Directory: $task_dir"
