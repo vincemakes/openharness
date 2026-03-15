@@ -23,9 +23,23 @@ _oh_require_init() {
 }
 
 _oh_active_task_dir() {
+  local root
+  root="$(_oh_repo_root)" || return 1
+  local active_file="$root/.openharness/active-task"
   local tasks_dir
   tasks_dir="$(_oh_tasks_dir)"
-  # Find most recent task by modification time
+
+  # Primary: read from active-task file
+  if [ -f "$active_file" ]; then
+    local task_id
+    task_id="$(cat "$active_file")"
+    if [ -n "$task_id" ] && [ -f "$tasks_dir/$task_id/status.json" ]; then
+      echo "$tasks_dir/$task_id"
+      return 0
+    fi
+  fi
+
+  # Fallback: most recent task by modification time (legacy compat)
   if [ -d "$tasks_dir" ]; then
     local latest
     latest="$(ls -1t "$tasks_dir" 2>/dev/null | head -1)"
@@ -63,6 +77,9 @@ _oh_write_status() {
   local verification_passed="${5:-false}"
   local last_failed_command="${6:-}"
   local handoff_state="${7:-null}"
+  local created_at="${8:-}"
+  local now
+  now="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
   if [ "$handoff_state" = "null" ]; then
     local hs="null"
@@ -76,16 +93,27 @@ _oh_write_status() {
     local lfc="null"
   fi
 
-  cat > "$task_dir/status.json" <<EOF
+  # Preserve created_at from existing file, or use provided value, or now
+  if [ -z "$created_at" ] && [ -f "$task_dir/status.json" ]; then
+    created_at="$(sed -n 's/.*"created_at"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$task_dir/status.json" | head -1)"
+  fi
+  created_at="${created_at:-$now}"
+
+  # Atomic write: write to temp file, then mv
+  local tmp_file="$task_dir/status.json.tmp"
+  cat > "$tmp_file" <<EOF
 {
   "id": "$id",
   "status": "$status",
   "attempt": $attempt,
   "verification_passed": $verification_passed,
   "last_failed_command": $lfc,
-  "handoff_state": $hs
+  "handoff_state": $hs,
+  "created_at": "$created_at",
+  "updated_at": "$now"
 }
 EOF
+  mv "$tmp_file" "$task_dir/status.json"
 }
 
 _oh_slugify() {
@@ -146,9 +174,17 @@ oh_advance() {
       echo "Task advanced: planning -> implementing"
       echo "Implementation is now allowed. Edit/Write hooks will permit file changes."
       ;;
-    *)
+    implementing|verifying|fixing)
       echo "openharness advance: cannot advance from '$status'" >&2
-      echo "Use 'openharness verify' or 'openharness handoff' for later transitions." >&2
+      echo "Use 'openharness verify' for later transitions." >&2
+      exit 1
+      ;;
+    ready_for_human_review|delivered|blocked)
+      echo "openharness advance: task is in terminal state '$status'" >&2
+      exit 1
+      ;;
+    *)
+      echo "openharness advance: unknown state '$status'" >&2
       exit 1
       ;;
   esac
@@ -179,6 +215,11 @@ oh_start_task() {
   fi
 
   mkdir -p "$task_dir"
+
+  # Write active-task pointer
+  local root
+  root="$(_oh_repo_root)"
+  printf '%s' "$task_id" > "$root/.openharness/active-task"
 
   # Initialize task.md
   cat > "$task_dir/task.md" <<EOF
@@ -273,11 +314,19 @@ oh_status() {
   attempt="$(_oh_read_num_field "$task_dir" "attempt")"
   vp="$(_oh_read_field "$task_dir" "verification_passed")"
 
+  local branch wt_path
+  branch="$(sed -n 's/.*"branch"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$task_dir/status.json" | head -1)"
+  wt_path="$(sed -n 's/.*"worktree_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$task_dir/status.json" | head -1)"
+
   echo "Task:     $id"
   echo "Status:   $status"
   echo "Attempt:  $attempt"
   echo "Verified: ${vp:-false}"
   echo "Dir:      $task_dir"
+  if [ -n "$branch" ]; then
+    echo "Branch:   $branch"
+    echo "Worktree: $wt_path"
+  fi
 }
 
 oh_verify() {
@@ -313,6 +362,29 @@ oh_verify() {
 
   local id status attempt
   id="$(_oh_read_field "$task_dir" "id")"
+  status="$(_oh_read_field "$task_dir" "status")"
+
+  # Only allow verify from implementing, verifying, or fixing states
+  case "$status" in
+    implementing|verifying|fixing) ;;
+    ready_for_human_review|delivered)
+      echo "openharness verify: task already verified (status: $status)" >&2
+      exit 1
+      ;;
+    blocked)
+      echo "openharness verify: task is blocked (max attempts reached)" >&2
+      exit 1
+      ;;
+    intake|planning)
+      echo "openharness verify: cannot verify from '$status' — advance to implementing first" >&2
+      exit 1
+      ;;
+    *)
+      echo "openharness verify: unknown state '$status'" >&2
+      exit 1
+      ;;
+  esac
+
   attempt="$(_oh_read_num_field "$task_dir" "attempt")"
   attempt=$((attempt + 1))
 
@@ -328,7 +400,7 @@ oh_verify() {
   # Run verification
   local result output exit_code
   set +e
-  output="$(cd "$root" && eval "$verify_cmd" 2>&1)"
+  output="$(cd "$root" && sh -c "$verify_cmd" 2>&1)"
   exit_code=$?
   set -e
 
@@ -407,6 +479,14 @@ oh_handoff() {
       ;;
     blocked)
       final_state="blocked"
+      ;;
+    delivered)
+      echo "openharness handoff: task already delivered" >&2
+      exit 1
+      ;;
+    intake|planning|implementing)
+      echo "openharness handoff: cannot handoff from '$status' — run verify first" >&2
+      exit 1
       ;;
     *)
       # If verify passed but status wasn't updated, allow handoff

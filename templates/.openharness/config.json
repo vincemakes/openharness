@@ -1,4 +1,6 @@
 {
   "verify_command": "echo 'No verify command configured. Edit .openharness/config.json'",
-  "max_verify_attempts": 3
+  "cleanup_command": "",
+  "max_verify_attempts": 3,
+  "pr_base_branch": "main"
 }

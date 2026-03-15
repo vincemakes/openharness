@@ -1,24 +1,36 @@
 # OpenHarness
 
-OpenHarness is a local development harness for Claude Code and Codex, inspired by [Harness Engineering](https://openai.com/index/harness-engineering/). It takes your coding agent from ad-hoc code generation to a constrained, evidence-based development loop.
+A delivery control plane for AI coding agents. Give it a task — it delivers a PR.
 
-## How it works
+```
+idea → task → plan → implement → verify → commit → PR
+```
 
-It starts the moment you ask your agent to build something. Instead of jumping straight into writing code, OpenHarness forces the agent through a structured lifecycle:
+OpenHarness takes your coding agent from ad-hoc code generation to a constrained, evidence-based delivery pipeline. It enforces sequencing at the platform level using hooks — the agent cannot skip steps even if it wants to.
 
-1. **Capture intent** — the agent creates a task with constraints and success criteria
-2. **Plan first** — the agent must write a plan before touching any project files. Hooks physically block `Edit` and `Write` operations until a plan exists
-3. **Implement** — only after the plan is approved can the agent write code
-4. **Verify** — the agent runs your configured verification commands and records evidence
-5. **Fix or finish** — failed verification triggers a fix loop. Repeated failures mark the task as blocked. Passing verification produces a structured handoff
+**What it does:** Owns the delivery path from "task is clear enough" to "PR is ready for review."
 
-Every task ends in one of two explicit states: `ready_for_human_review` or `blocked`. There is no silent "done."
+**What it doesn't do:** Brainstorming, memory, or conversation management. Those belong to other tools (Superpowers, claude-mem, etc.).
 
-The key difference from prompt-only workflow tools: OpenHarness uses `PreToolUse` hooks to enforce sequencing at the platform level. The agent cannot skip steps even if it wants to.
+## The Full Flow
+
+```
+User: "add search to the chat panel"
+  ↓
+openharness start-task "add search to chat panel"    # capture intent
+openharness advance                                    # → planning
+  # agent writes plan.md (hooks block code edits until plan exists)
+openharness advance                                    # → implementing
+  # agent writes code in isolated worktree
+openharness verify                                     # run tests, record evidence
+openharness cleanup                                    # lint + format
+openharness commit                                     # auto-generated commit message
+openharness pr                                         # create PR with summary + evidence
+  ↓
+User: reviews PR
+```
 
 ## Installation
-
-**Note:** Claude Code and Codex have different installation paths.
 
 ### Claude Code
 
@@ -29,7 +41,7 @@ cd /path/to/your/project
 openharness init
 ```
 
-Restart Claude Code after `init`. The init command creates `.claude/settings.local.json` with hook configuration that Claude Code picks up on next session.
+Restart Claude Code after `init`. The init command creates `.claude/settings.local.json` with hook configuration.
 
 ### Codex
 
@@ -40,12 +52,6 @@ cd /path/to/your/project
 openharness init
 ```
 
-Restart Codex after installation.
-
-### Verify Installation
-
-Start a new Claude Code session in an initialized repo. The session-start hook should report OpenHarness status. Ask the agent to implement something — it should automatically route the work through the task lifecycle.
-
 ## Initialize a Repository
 
 ```bash
@@ -53,36 +59,81 @@ cd /path/to/your/project
 openharness init
 ```
 
-This creates:
-- `.openharness/` — configuration, rules, and tasks directory
-- `.claude/settings.local.json` — hook configuration for Claude Code
-- `AGENTS.md` section — agent instructions for the harness lifecycle
+Creates:
+- `.openharness/` — config, rules, tasks directory
+- `.claude/settings.local.json` — hook configuration
+- `AGENTS.md` section — agent lifecycle instructions
 
-## The Development Loop
+## CLI Reference
 
-```bash
-openharness start-task "fix the streaming order bug"   # capture intent
-openharness advance                                     # intake → planning
-# agent writes plan.md
-openharness advance                                     # planning → implementing
-# agent implements changes
-openharness verify                                      # run tests, record evidence
-openharness handoff                                     # produce final summary
+### Lifecycle Commands
+
+| Command | Description |
+|---------|-------------|
+| `start-task "<goal>"` | Create a new task, set status to `intake` |
+| `advance` | Move task forward: intake → planning → implementing |
+| `verify` | Run verification commands, record evidence |
+| `handoff` | Produce final summary (legacy, before delivery tail) |
+
+### Delivery Commands
+
+| Command | Description |
+|---------|-------------|
+| `cleanup` | Run lint/format from `cleanup_command` config |
+| `commit` | Auto-commit with generated message (requires verified) |
+| `pr` | Create PR via `gh` or write draft to task directory |
+
+### Worktree Commands
+
+| Command | Description |
+|---------|-------------|
+| `worktree create` | Create isolated git worktree for active task |
+| `worktree status` | Show worktree info |
+| `worktree remove` | Remove worktree and clean up branch |
+
+### Other Commands
+
+| Command | Description |
+|---------|-------------|
+| `init` | Initialize repo for OpenHarness |
+| `install <platform>` | Install for claude-code or codex |
+| `status` | Show active task state |
+
+## State Machine
+
+```
+intake → planning → implementing → verifying
+                                      ↓
+                              ┌───────┴───────┐
+                              ↓               ↓
+                           fixing      ready_for_human_review
+                              ↓               ↓
+                           blocked        delivered
 ```
 
-The agent learns these commands through two built-in skills that activate automatically.
+- **intake** — task created, agent fills in constraints
+- **planning** — agent writes plan.md (hooks block code edits)
+- **implementing** — code changes allowed
+- **verifying** — running verification commands
+- **fixing** — verification failed, agent fixing (retries allowed)
+- **blocked** — max verification attempts exceeded (terminal)
+- **ready_for_human_review** — verification passed
+- **delivered** — committed and ready for PR
 
-## What's Inside
+## Worktree Isolation
 
-### Enforcement Layer
+Each task can run in an isolated git worktree:
 
-- **PreToolUse hook** — blocks `Edit`/`Write`/`NotebookEdit` when the active task is in `intake` or `planning` state
-- **Session-start hook** — injects task awareness into every new session
-- **CLI-only state mutations** — skills guide the agent but never change state directly
+```bash
+openharness start-task "add search"
+openharness worktree create
+# Creates branch: oh/2026-03-15-add-search
+# Worktree at: .openharness/worktrees/2026-03-15-add-search/
+```
 
-### Task Artifacts
+Changes stay on the task branch. Main branch is never touched until PR merge.
 
-Each task produces a self-contained directory:
+## Task Artifacts
 
 ```
 .openharness/tasks/<task-id>/
@@ -90,65 +141,53 @@ Each task produces a self-contained directory:
 ├── plan.md          # approach, affected files, risks
 ├── status.json      # machine-readable state (gitignored)
 ├── verify.md        # verification evidence (gitignored)
-└── handoff.md       # final summary for human review
+├── handoff.md       # summary for human review
+└── pr-draft.md      # PR body (if gh CLI unavailable)
 ```
-
-### Skills
-
-- **using-openharness** — detects harness state, routes work into the lifecycle
-- **openharness-task** — teaches the agent the full task lifecycle and CLI commands
-
-### Commands
-
-- `/start-task` — create a new task
-- `/verify-task` — run verification on the active task
-- `/handoff-task` — complete the active task
-
-### CLI
-
-```bash
-openharness install <platform>    # install for claude-code or codex
-openharness init                  # initialize current repo
-openharness start-task "<goal>"   # create a new task
-openharness advance               # move to next lifecycle state
-openharness status                # show active task state
-openharness verify                # run verification, record evidence
-openharness handoff               # produce final handoff summary
-```
-
-## Philosophy
-
-- **Repo is the system of record** — all task state, plans, and evidence live in the repo, not in chat history
-- **Enforcement over guidance** — hooks block invalid operations, not just discourage them
-- **Evidence over claims** — no completion without verification
-- **Explicit handoff** — every task ends in a reviewable state
-
-Inspired by [Harness Engineering: leveraging Codex in an agent-first world](https://openai.com/index/harness-engineering/) — the idea that environmental design produces higher ROI than prompt engineering.
 
 ## Configuration
 
-After `openharness init`, edit `.openharness/config.json`:
+Edit `.openharness/config.json`:
 
 ```json
 {
-  "verify_command": "npm test",
-  "max_verify_attempts": 3
+  "verify_command": "pnpm test",
+  "cleanup_command": "pnpm lint --fix && pnpm format",
+  "max_verify_attempts": 3,
+  "pr_base_branch": "main"
 }
 ```
 
-Set `verify_command` to whatever validates your project (test suite, linter, type check, etc.).
+| Field | Description |
+|-------|-------------|
+| `verify_command` | Command to validate the project |
+| `cleanup_command` | Lint/format command (optional) |
+| `max_verify_attempts` | Retries before marking task blocked |
+| `pr_base_branch` | Target branch for PRs |
+
+## Enforcement
+
+- **PreToolUse hook** — blocks `Edit`/`Write`/`NotebookEdit` in `intake` and `planning` states
+- **Session-start hook** — injects task awareness into every session
+- **CLI-only state mutations** — no manual status.json editing
+- **Atomic writes** — status.json uses temp file + mv to prevent corruption
+
+## Philosophy
+
+- **Repo is the system of record** — task state, plans, and evidence live in the repo
+- **Enforcement over guidance** — hooks block invalid operations
+- **Evidence over claims** — no completion without verification
+- **Isolation by default** — worktrees keep main branch clean
+- **Explicit delivery** — every task ends in a reviewable PR or a blocked state
+
+Inspired by [Harness Engineering](https://openai.com/index/harness-engineering/).
 
 ## Requirements
 
 - Git
 - POSIX shell (sh/bash/zsh)
 - Claude Code or Codex
-
-## Contributing
-
-1. Fork the repository
-2. Create a branch for your changes
-3. Submit a PR
+- `gh` CLI (optional, for automated PR creation)
 
 ## License
 

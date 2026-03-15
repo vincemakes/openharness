@@ -29,14 +29,21 @@ fi
 
 # Find active task
 TASKS_DIR="$REPO_ROOT/.openharness/tasks"
-if [ ! -d "$TASKS_DIR" ]; then
-  exit 0  # no tasks dir — passthrough
+ACTIVE_TASK_FILE="$REPO_ROOT/.openharness/active-task"
+
+# Primary: read from active-task file
+ACTIVE_TASK=""
+if [ -f "$ACTIVE_TASK_FILE" ]; then
+  ACTIVE_TASK="$(cat "$ACTIVE_TASK_FILE")"
 fi
 
-# Get the most recent task directory
-ACTIVE_TASK="$(ls -1t "$TASKS_DIR" 2>/dev/null | head -1)"
+# Fallback: most recent by mtime
+if [ -z "$ACTIVE_TASK" ] && [ -d "$TASKS_DIR" ]; then
+  ACTIVE_TASK="$(ls -1t "$TASKS_DIR" 2>/dev/null | head -1)"
+fi
+
 if [ -z "$ACTIVE_TASK" ]; then
-  exit 0  # no tasks — passthrough (no active task = no enforcement)
+  exit 0  # no tasks — passthrough
 fi
 
 STATUS_FILE="$TASKS_DIR/$ACTIVE_TASK/status.json"

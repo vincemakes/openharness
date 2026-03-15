@@ -41,10 +41,10 @@ oh_init() {
   local gitignore="$repo_root/.gitignore"
   if [ -f "$gitignore" ]; then
     if ! grep -q '.openharness/tasks/*/status.json' "$gitignore" 2>/dev/null; then
-      printf '\n# OpenHarness — local task artifacts\n.openharness/tasks/*/status.json\n.openharness/tasks/*/verify.md\n' >> "$gitignore"
+      printf '\n# OpenHarness — local task artifacts\n.openharness/tasks/*/status.json\n.openharness/tasks/*/status.json.tmp\n.openharness/tasks/*/verify.md\n.openharness/active-task\n' >> "$gitignore"
     fi
   else
-    printf '# OpenHarness — local task artifacts\n.openharness/tasks/*/status.json\n.openharness/tasks/*/verify.md\n' > "$gitignore"
+    printf '# OpenHarness — local task artifacts\n.openharness/tasks/*/status.json\n.openharness/tasks/*/status.json.tmp\n.openharness/tasks/*/verify.md\n.openharness/active-task\n' > "$gitignore"
   fi
 
   # AGENTS.md integration

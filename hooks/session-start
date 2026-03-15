@@ -15,12 +15,19 @@ if [ -n "$REPO_ROOT" ] && [ -d "$REPO_ROOT/.openharness" ]; then
   INIT_STATUS="initialized"
   # Check for active task
   TASKS_DIR="$REPO_ROOT/.openharness/tasks"
-  if [ -d "$TASKS_DIR" ]; then
+  ACTIVE_TASK_FILE="$REPO_ROOT/.openharness/active-task"
+
+  LATEST=""
+  if [ -f "$ACTIVE_TASK_FILE" ]; then
+    LATEST="$(cat "$ACTIVE_TASK_FILE")"
+  fi
+  if [ -z "$LATEST" ] && [ -d "$TASKS_DIR" ]; then
     LATEST="$(ls -1t "$TASKS_DIR" 2>/dev/null | head -1)"
-    if [ -n "$LATEST" ] && [ -f "$TASKS_DIR/$LATEST/status.json" ]; then
-      STATUS="$(sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TASKS_DIR/$LATEST/status.json" | head -1)"
-      ACTIVE_TASK="$LATEST (status: $STATUS)"
-    fi
+  fi
+
+  if [ -n "$LATEST" ] && [ -f "$TASKS_DIR/$LATEST/status.json" ]; then
+    STATUS="$(sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TASKS_DIR/$LATEST/status.json" | head -1)"
+    ACTIVE_TASK="$LATEST (status: $STATUS)"
   fi
 fi
 

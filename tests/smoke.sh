@@ -46,6 +46,7 @@ assert_file ".openharness/REPO_GUIDE.md"
 assert_file ".openharness/RULES.md"
 assert_file "AGENTS.md"
 assert_contains ".gitignore" "status.json"
+assert_contains ".gitignore" "active-task"
 
 # --- Test: Idempotent init ---
 sh "$OPENHARNESS_BIN" init >/dev/null
@@ -59,6 +60,18 @@ assert_file "${TASK_DIR}task.md"
 assert_file "${TASK_DIR}plan.md"
 assert_file "${TASK_DIR}status.json"
 assert_contains "${TASK_DIR}status.json" '"status": "intake"'
+assert_contains "${TASK_DIR}status.json" '"created_at"'
+assert_contains "${TASK_DIR}status.json" '"updated_at"'
+
+# --- Test: Active-task file ---
+echo "--- Active-task file ---"
+assert_file ".openharness/active-task"
+ACTIVE_ID="$(cat .openharness/active-task)"
+if echo "$TASK_DIR" | grep -q "$ACTIVE_ID"; then
+  pass "active-task matches task directory"
+else
+  fail "active-task mismatch"
+fi
 
 # --- Test: Status ---
 echo "--- Status ---"
@@ -98,12 +111,38 @@ HOOK_EXIT=$?
 set -e
 assert_exit 0 "$HOOK_EXIT" "hook allows Edit during implementing"
 
+# --- Test: Illegal state transitions ---
+echo "--- Illegal state transitions ---"
+set +e
+OUTPUT="$(sh "$OPENHARNESS_BIN" advance 2>&1)"
+assert_exit 1 $? "advance from implementing rejected"
+
+# Verify from intake is rejected
+sh "$OPENHARNESS_BIN" start-task "test illegal verify" >/dev/null
+OUTPUT="$(sh "$OPENHARNESS_BIN" verify 2>&1)"
+assert_exit 1 $? "verify from intake rejected"
+
+# Handoff from planning is rejected
+sh "$OPENHARNESS_BIN" advance >/dev/null
+OUTPUT="$(sh "$OPENHARNESS_BIN" handoff 2>&1)"
+assert_exit 1 $? "handoff from planning rejected"
+set -e
+
+# Switch back to first task for remaining tests
+printf '%s' "$(echo "$TASK_DIR" | sed 's|.openharness/tasks/||;s|/||')" > .openharness/active-task
+
 # --- Test: Verify (pass) ---
 echo "--- Verification ---"
-printf '{"verify_command":"echo all tests passed","max_verify_attempts":3}' > .openharness/config.json
+printf '{"verify_command":"echo all tests passed","cleanup_command":"echo cleaned","max_verify_attempts":3,"pr_base_branch":"main"}' > .openharness/config.json
 sh "$OPENHARNESS_BIN" verify >/dev/null
 assert_contains "${TASK_DIR}verify.md" "PASS"
 assert_contains "${TASK_DIR}status.json" '"status": "ready_for_human_review"'
+
+# --- Test: Verify from ready_for_human_review is rejected ---
+set +e
+OUTPUT="$(sh "$OPENHARNESS_BIN" verify 2>&1)"
+assert_exit 1 $? "verify from ready_for_human_review rejected"
+set -e
 
 # --- Test: Handoff ---
 echo "--- Handoff ---"

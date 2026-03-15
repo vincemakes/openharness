@@ -12,6 +12,10 @@ OPENHARNESS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "$OPENHARNESS_ROOT/lib/init.sh"
 # shellcheck source=lib/task.sh
 . "$OPENHARNESS_ROOT/lib/task.sh"
+# shellcheck source=lib/worktree.sh
+. "$OPENHARNESS_ROOT/lib/worktree.sh"
+# shellcheck source=lib/delivery.sh
+. "$OPENHARNESS_ROOT/lib/delivery.sh"
 
 usage() {
   cat <<'EOF'
@@ -25,6 +29,10 @@ Commands:
   status                Show active task state
   verify                Run verification and record evidence
   handoff               Produce final handoff summary
+  worktree [sub]        Manage git worktree (create|remove|status)
+  cleanup               Run cleanup commands (lint, format)
+  commit                Auto-commit with generated message
+  pr                    Create PR or draft from task
 
 Options:
   --help, -h            Show this help
@@ -64,6 +72,22 @@ case "${1:-}" in
   handoff)
     shift
     oh_handoff "$@"
+    ;;
+  worktree)
+    shift
+    oh_worktree "$@"
+    ;;
+  cleanup)
+    shift
+    oh_cleanup "$@"
+    ;;
+  commit)
+    shift
+    oh_commit "$@"
+    ;;
+  pr)
+    shift
+    oh_pr "$@"
     ;;
   --version|-v)
     version
