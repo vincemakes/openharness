@@ -141,8 +141,22 @@ For UI/browser-based verification, OpenHarness can drive a dev server and coordi
 
 ### Setup
 
-1. Add Playwright MCP server to your Claude Code configuration
-2. Configure your dev server in `.openharness/config.json`:
+**Step 1 — Add Playwright MCP to `~/.claude/settings.json`:**
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
+    }
+  }
+}
+```
+
+Restart Claude Code after saving.
+
+**Step 2 — Configure your dev server in `.openharness/config.json`:**
 
 ```json
 {
