@@ -9,6 +9,11 @@ FAIL=0
 pass() { PASS=$((PASS + 1)); echo "  PASS: $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "  FAIL: $1"; }
 
+fill_task_md() {
+  local task_dir="$1"
+  printf '## Done Condition\nTask is complete when tests pass\n\n## Verification Path\nunit tests\n' >> "$task_dir/task.md"
+}
+
 assert_exit() {
   local expected="$1" actual="$2" label="$3"
   if [ "$expected" = "$actual" ]; then pass "$label"; else fail "$label (expected exit $expected, got $actual)"; fi
@@ -39,6 +44,7 @@ sh "$OPENHARNESS_BIN" start-task "add user search" >/dev/null
 TASK_ID="$(cat .openharness/active-task)"
 TASK_DIR=".openharness/tasks/$TASK_ID"
 
+fill_task_md "$TASK_DIR"
 sh "$OPENHARNESS_BIN" advance >/dev/null
 printf '## Goal\nAdd search\n\n## Approach\nNew component\n\n## Risks\nNone\n' > "$TASK_DIR/plan.md"
 sh "$OPENHARNESS_BIN" advance >/dev/null
@@ -70,6 +76,7 @@ echo "--- Commit guards ---"
 # Create another task in implementing to test guard
 sh "$OPENHARNESS_BIN" start-task "test commit guard" >/dev/null
 GUARD_ID="$(cat .openharness/active-task)"
+fill_task_md ".openharness/tasks/$GUARD_ID"
 sh "$OPENHARNESS_BIN" advance >/dev/null
 printf '## Goal\nTest\n' > ".openharness/tasks/$GUARD_ID/plan.md"
 sh "$OPENHARNESS_BIN" advance >/dev/null
@@ -134,6 +141,7 @@ sh "$OPENHARNESS_BIN" start-task "test verify retry" >/dev/null
 RETRY_ID="$(cat .openharness/active-task)"
 RETRY_DIR=".openharness/tasks/$RETRY_ID"
 
+fill_task_md "$RETRY_DIR"
 sh "$OPENHARNESS_BIN" advance >/dev/null
 printf '## Goal\nTest\n' > "$RETRY_DIR/plan.md"
 sh "$OPENHARNESS_BIN" advance >/dev/null

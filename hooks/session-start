@@ -32,11 +32,16 @@ if [ -n "$REPO_ROOT" ] && [ -d "$REPO_ROOT/.openharness" ]; then
 fi
 
 # Build context message — plain text, no complex escaping needed
+HANDOFF_NOTE=""
+if [ "$INIT_STATUS" = "initialized" ] && [ -f "$REPO_ROOT/.openharness/HANDOFF.md" ]; then
+  HANDOFF_NOTE=" Session continuity: check .openharness/HANDOFF.md for previous session state."
+fi
+
 if [ "$INIT_STATUS" = "initialized" ]; then
   if [ -n "$ACTIVE_TASK" ]; then
-    CTX="[OpenHarness] Repo initialized. Active task: $ACTIVE_TASK. Run 'openharness status' for details. Use the 'openharness-task' skill for lifecycle guidance."
+    CTX="[OpenHarness] Repo initialized. Active task: $ACTIVE_TASK. Run 'openharness status' for details. Use the 'openharness-task' skill for lifecycle guidance.$HANDOFF_NOTE"
   else
-    CTX="[OpenHarness] Repo initialized. No active task. Run: openharness start-task <goal>"
+    CTX="[OpenHarness] Repo initialized. No active task. Run: openharness start-task <goal>$HANDOFF_NOTE"
   fi
 else
   CTX="[OpenHarness] Available but repo not initialized. Run: openharness init"

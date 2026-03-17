@@ -9,6 +9,11 @@ FAIL=0
 pass() { PASS=$((PASS + 1)); echo "  PASS: $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "  FAIL: $1"; }
 
+fill_task_md() {
+  local task_dir="$1"
+  printf '## Done Condition\nTask is complete when tests pass\n\n## Verification Path\nunit tests\n' >> "$task_dir/task.md"
+}
+
 assert_exit() {
   local expected="$1" actual="$2" label="$3"
   if [ "$expected" = "$actual" ]; then pass "$label"; else fail "$label (expected exit $expected, got $actual)"; fi
@@ -51,6 +56,7 @@ sh "$OPENHARNESS_BIN" start-task "test interactive" >/dev/null
 TASK_ID="$(cat .openharness/active-task)"
 TASK_DIR=".openharness/tasks/$TASK_ID"
 
+fill_task_md "$TASK_DIR"
 sh "$OPENHARNESS_BIN" advance >/dev/null
 printf '## Goal\nTest interactive verify\n' > "$TASK_DIR/plan.md"
 sh "$OPENHARNESS_BIN" advance >/dev/null
@@ -86,6 +92,7 @@ assert_contains "$TASK_DIR2/verify-interactive.md" "Interactive Verification Ste
 
 # --- Test: Start with mock server → polling detects readiness ---
 echo "--- Start with mock server ---"
+fill_task_md "$TASK_DIR2"
 sh "$OPENHARNESS_BIN" advance >/dev/null
 printf '## Goal\nTest interactive\n' > "$TASK_DIR2/plan.md"
 sh "$OPENHARNESS_BIN" advance >/dev/null
@@ -134,6 +141,7 @@ sh "$OPENHARNESS_BIN" start-task "test fail flow" >/dev/null
 TASK_ID3="$(cat .openharness/active-task)"
 TASK_DIR3=".openharness/tasks/$TASK_ID3"
 
+fill_task_md "$TASK_DIR3"
 sh "$OPENHARNESS_BIN" advance >/dev/null
 printf '## Goal\nTest fail\n' > "$TASK_DIR3/plan.md"
 sh "$OPENHARNESS_BIN" advance >/dev/null
@@ -185,6 +193,7 @@ sh "$OPENHARNESS_BIN" start-task "test max attempts" >/dev/null
 TASK_ID4="$(cat .openharness/active-task)"
 TASK_DIR4=".openharness/tasks/$TASK_ID4"
 
+fill_task_md "$TASK_DIR4"
 sh "$OPENHARNESS_BIN" advance >/dev/null
 printf '## Goal\nTest max\n' > "$TASK_DIR4/plan.md"
 sh "$OPENHARNESS_BIN" advance >/dev/null

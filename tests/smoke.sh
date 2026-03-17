@@ -9,6 +9,12 @@ FAIL=0
 pass() { PASS=$((PASS + 1)); echo "  PASS: $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "  FAIL: $1"; }
 
+# Fill required intake fields so advance intake->planning succeeds
+fill_task_md() {
+  local task_dir="$1"
+  printf '## Done Condition\nTask is complete when tests pass\n\n## Verification Path\nunit tests\n' >> "$task_dir/task.md"
+}
+
 assert_exit() {
   local expected="$1" actual="$2" label="$3"
   if [ "$expected" = "$actual" ]; then pass "$label"; else fail "$label (expected exit $expected, got $actual)"; fi
@@ -89,6 +95,7 @@ assert_exit 2 "$HOOK_EXIT" "hook blocks Edit during intake"
 
 # --- Test: Advance intake -> planning ---
 echo "--- State transitions ---"
+fill_task_md "$TASK_DIR"
 sh "$OPENHARNESS_BIN" advance >/dev/null
 assert_contains "${TASK_DIR}status.json" '"status": "planning"'
 
@@ -119,10 +126,12 @@ assert_exit 1 $? "advance from implementing rejected"
 
 # Verify from intake is rejected
 sh "$OPENHARNESS_BIN" start-task "test illegal verify" >/dev/null
+ILLEGAL_DIR=".openharness/tasks/$(cat .openharness/active-task)"
 OUTPUT="$(sh "$OPENHARNESS_BIN" verify 2>&1)"
 assert_exit 1 $? "verify from intake rejected"
 
 # Handoff from planning is rejected
+fill_task_md "$ILLEGAL_DIR"
 sh "$OPENHARNESS_BIN" advance >/dev/null
 OUTPUT="$(sh "$OPENHARNESS_BIN" handoff 2>&1)"
 assert_exit 1 $? "handoff from planning rejected"

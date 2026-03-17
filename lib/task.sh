@@ -132,8 +132,8 @@ oh_advance() {
       echo "Usage: openharness advance"
       echo ""
       echo "Advance the active task to the next state."
-      echo "  intake -> planning (always)"
-      echo "  planning -> implementing (requires plan.md content)"
+      echo "  intake -> planning (requires task.md Done Condition + Verification Path)"
+      echo "  planning -> implementing (requires plan.md Goal section content)"
       return 0
       ;;
   esac
@@ -153,6 +153,20 @@ oh_advance() {
 
   case "$status" in
     intake)
+      # Require task.md Done Condition to have real content
+      if ! grep -q '^## Done Condition' "$task_dir/task.md" 2>/dev/null || \
+         ! sed -n '/^## Done Condition/,/^## /p' "$task_dir/task.md" | grep -Eqv '^##|^[[:space:]]*$|^<!--'; then
+        echo "openharness advance: task.md Done Condition section is empty" >&2
+        echo "Define what 'done' looks like before planning." >&2
+        exit 1
+      fi
+      # Require task.md Verification Path to have real content
+      if ! grep -q '^## Verification Path' "$task_dir/task.md" 2>/dev/null || \
+         ! sed -n '/^## Verification Path/,/^## /p' "$task_dir/task.md" | grep -Eqv '^##|^[[:space:]]*$|^<!--'; then
+        echo "openharness advance: task.md Verification Path section is empty" >&2
+        echo "Define how this task will be verified before planning." >&2
+        exit 1
+      fi
       _oh_write_status "$task_dir" "$id" "planning" "$attempt"
       echo "Task advanced: intake -> planning"
       echo "Next: write $task_dir/plan.md, then run 'openharness advance' again."
@@ -165,7 +179,7 @@ oh_advance() {
       fi
       # Check that at least the Goal section has content
       if ! grep -q '^## Goal' "$task_dir/plan.md" 2>/dev/null || \
-         ! sed -n '/^## Goal/,/^## /p' "$task_dir/plan.md" | grep -qv '^##\|^$\|^<!--'; then
+         ! sed -n '/^## Goal/,/^## /p' "$task_dir/plan.md" | grep -Eqv '^##|^[[:space:]]*$|^<!--'; then
         echo "openharness advance: plan.md Goal section is empty" >&2
         echo "Fill in the plan before advancing to implementation." >&2
         exit 1
@@ -228,11 +242,19 @@ oh_start_task() {
 ## Original Request
 $goal
 
+## Done Condition
+<!-- REQUIRED: What does "done" look like? Be specific and observable. -->
+<!-- Example: "Search input appears in the header and returns matching results" -->
+
+## Verification Path
+<!-- REQUIRED: How will this be verified? -->
+<!-- Example: "unit tests", "interactive verify", "manual review", or "reuse repo default" -->
+
+## Rollback Hint
+<!-- Recommended: How to undo this if it goes wrong -->
+
 ## Constraints
 <!-- Add constraints here -->
-
-## Success Criteria
-<!-- Define what success looks like -->
 
 ## Assumptions
 <!-- List assumptions -->
@@ -346,15 +368,126 @@ oh_status() {
   fi
 }
 
+# --- Verify helpers ---
+
+# Fixed layer execution order
+_OH_LAYER_ORDER="fast standard full"
+
+# Read verify_layers commands for a given layer from config.json.
+# Returns newline-separated commands, or empty if layer not defined.
+# Falls back to verify_command mapped to standard.
+_oh_verify_layer_cmds() {
+  local config="$1"
+  local layer="$2"
+
+  # Check if verify_layers exists in config
+  if grep -q '"verify_layers"' "$config" 2>/dev/null; then
+    # Extract commands array for the layer using sed
+    # Matches: "fast": ["cmd1", "cmd2"]  (single or multiple lines within the array)
+    # We use a multi-pass approach: find the layer key, collect until closing ]
+    local in_layer=false
+    local in_array=false
+    while IFS= read -r line; do
+      if echo "$line" | grep -q "\"$layer\""; then
+        in_layer=true
+      fi
+      if [ "$in_layer" = "true" ]; then
+        if echo "$line" | grep -q '\['; then
+          in_array=true
+        fi
+        if [ "$in_array" = "true" ]; then
+          # Extract quoted strings from array elements
+          echo "$line" | grep -o '"[^"]*"' | sed 's/^"//;s/"$//' | grep -v "^$layer$" || true
+          if echo "$line" | grep -q '\]'; then
+            break
+          fi
+        fi
+      fi
+    done < "$config"
+  else
+    # Backward compat: verify_command maps to standard
+    if [ "$layer" = "standard" ]; then
+      sed -n 's/.*"verify_command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$config" | head -1
+    fi
+  fi
+}
+
+# Get the default verify layer from config
+_oh_default_layer() {
+  local config="$1"
+  local default
+  default="$(sed -n 's/.*"default_verify_layer"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$config" | head -1)"
+  echo "${default:-standard}"
+}
+
+# Determine which layers to run given a target layer (cumulative from fast up to target)
+_oh_layers_to_run() {
+  local target="$1"
+  local only="$2"  # if "true", run only the target layer
+  if [ "$only" = "true" ]; then
+    echo "$target"
+    return
+  fi
+  local found=false
+  for layer in $_OH_LAYER_ORDER; do
+    echo "$layer"
+    if [ "$layer" = "$target" ]; then
+      found=true
+      break
+    fi
+  done
+  if [ "$found" = "false" ]; then
+    # Unknown layer — run just that layer
+    echo "$target"
+  fi
+}
+
 oh_verify() {
-  case "${1:-}" in
-    --help|-h)
-      echo "Usage: openharness verify"
-      echo ""
-      echo "Run configured verification commands and record evidence."
-      return 0
-      ;;
-  esac
+  local target_layer=""
+  local only_flag=false
+
+  # Parse flags
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --help|-h)
+        echo "Usage: openharness verify [--fast | --full | --layer <name>] [--only]"
+        echo ""
+        echo "Run configured verification and record evidence."
+        echo ""
+        echo "Options:"
+        echo "  --fast             Run up to fast layer"
+        echo "  --full             Run all layers (fast + standard + full)"
+        echo "  --layer <name>     Run up to named layer (cumulative)"
+        echo "  --only             Run only the specified layer (not cumulative)"
+        return 0
+        ;;
+      --fast)
+        target_layer="fast"
+        shift
+        ;;
+      --full)
+        target_layer="full"
+        shift
+        ;;
+      --layer)
+        shift
+        target_layer="${1:-}"
+        if [ -z "$target_layer" ]; then
+          echo "openharness verify: --layer requires a layer name" >&2
+          exit 1
+        fi
+        shift
+        ;;
+      --only)
+        only_flag=true
+        shift
+        ;;
+      *)
+        echo "openharness verify: unknown option '$1'" >&2
+        exit 1
+        ;;
+    esac
+  done
 
   _oh_require_init
 
@@ -368,16 +501,12 @@ oh_verify() {
   root="$(_oh_repo_root)"
   local config="$root/.openharness/config.json"
 
-  # Read verify command from config.json
-  local verify_cmd
-  verify_cmd="$(sed -n 's/.*"verify_command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$config" | head -1)"
-
-  if [ -z "$verify_cmd" ]; then
-    echo "openharness verify: no verify_command configured in .openharness/config.json" >&2
-    exit 1
+  # Determine target layer
+  if [ -z "$target_layer" ]; then
+    target_layer="$(_oh_default_layer "$config")"
   fi
 
-  local id status attempt
+  local id status
   id="$(_oh_read_field "$task_dir" "id")"
   status="$(_oh_read_field "$task_dir" "status")"
 
@@ -402,58 +531,140 @@ oh_verify() {
       ;;
   esac
 
+  local attempt
   attempt="$(_oh_read_num_field "$task_dir" "attempt")"
   attempt=$((attempt + 1))
 
-  # Read max attempts
   local max_attempts
   max_attempts="$(sed -n 's/.*"max_verify_attempts"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' "$config" | head -1)"
   max_attempts="${max_attempts:-3}"
 
-  echo "Running verification (attempt $attempt)..."
-  echo "Command: $verify_cmd"
+  echo "Running verification (attempt $attempt, layer: $target_layer)..."
   echo ""
 
-  # Run verification
-  local result output exit_code
-  set +e
-  output="$(cd "$root" && sh -c "$verify_cmd" 2>&1)"
-  exit_code=$?
-  set -e
+  # Determine layers to run
+  local layers_to_run
+  layers_to_run="$(_oh_layers_to_run "$target_layer" "$only_flag")"
 
-  if [ "$exit_code" -eq 0 ]; then
-    result="PASS"
-  else
-    result="FAIL"
-  fi
+  local overall_result="PASS"
+  local failed_layer=""
+  local failed_cmd=""
+  local verify_md_content=""
+  local now
+  now="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
-  # Write verify.md
-  cat > "$task_dir/verify.md" <<EOF
-# Verification Evidence
+  verify_md_content="# Verification Evidence
 
-## Attempt $attempt
-- **Command:** \`$verify_cmd\`
-- **Result:** $result
-- **Exit code:** $exit_code
-- **Timestamp:** $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+## Attempt $attempt (layer: $target_layer)
+- **Timestamp:** $now
+"
 
-### Output
+  # Run each layer
+  for layer in $layers_to_run; do
+    # Manual layer is a checklist, not executable — handled separately below
+    [ "$layer" = "manual" ] && continue
+
+    local cmds
+    cmds="$(_oh_verify_layer_cmds "$config" "$layer")"
+
+    # Skip layer if no commands defined for it
+    if [ -z "$cmds" ]; then
+      continue
+    fi
+
+    echo "--- Layer: $layer ---"
+    verify_md_content="${verify_md_content}
+### Layer: $layer
+"
+
+    # Run each command in the layer
+    local layer_result="PASS"
+    while IFS= read -r cmd; do
+      [ -z "$cmd" ] && continue
+      echo "  Running: $cmd"
+      local cmd_output cmd_exit
+      set +e
+      cmd_output="$(cd "$root" && sh -c "$cmd" 2>&1)"
+      cmd_exit=$?
+      set -e
+
+      local cmd_result="PASS"
+      if [ "$cmd_exit" -ne 0 ]; then
+        cmd_result="FAIL"
+        layer_result="FAIL"
+      fi
+
+      verify_md_content="${verify_md_content}- **Command:** \`$cmd\`
+- **Result:** $cmd_result
+- **Exit code:** $cmd_exit
+
 \`\`\`
-$output
+$cmd_output
 \`\`\`
+
+"
+      if [ "$cmd_result" = "FAIL" ]; then
+        echo "  FAIL (exit $cmd_exit)"
+        break
+      else
+        echo "  PASS"
+      fi
+    done <<EOF
+$cmds
 EOF
 
-  if [ "$result" = "PASS" ]; then
+    if [ "$layer_result" = "FAIL" ]; then
+      overall_result="FAIL"
+      failed_layer="$layer"
+      failed_cmd="$cmd"
+      break
+    fi
+  done
+
+  # Append manual checklist if present and we ran a full pass
+  if [ "$overall_result" = "PASS" ] && grep -q '"manual"' "$config" 2>/dev/null; then
+    local manual_items
+    manual_items="$(_oh_verify_layer_cmds "$config" "manual")"
+    if [ -n "$manual_items" ]; then
+      echo "--- Manual Review Checklist ---"
+      verify_md_content="${verify_md_content}### Manual Review Checklist
+"
+      while IFS= read -r item; do
+        [ -z "$item" ] && continue
+        echo "  [ ] $item"
+        verify_md_content="${verify_md_content}- [ ] $item
+"
+      done <<EOF
+$manual_items
+EOF
+    fi
+  fi
+
+  # Append overall result
+  if [ "$overall_result" = "PASS" ]; then
+    verify_md_content="${verify_md_content}
+### Overall: PASS
+"
+  else
+    verify_md_content="${verify_md_content}
+### Overall: FAIL (failed at layer: $failed_layer)
+"
+  fi
+
+  printf '%s' "$verify_md_content" > "$task_dir/verify.md"
+
+  echo ""
+  if [ "$overall_result" = "PASS" ]; then
     _oh_write_status "$task_dir" "$id" "ready_for_human_review" "$attempt" "true" "" "null"
     echo "Verification PASSED."
     echo "Run 'openharness handoff' to complete."
   else
     if [ "$attempt" -ge "$max_attempts" ]; then
-      _oh_write_status "$task_dir" "$id" "blocked" "$attempt" "false" "$verify_cmd" "blocked"
+      _oh_write_status "$task_dir" "$id" "blocked" "$attempt" "false" "$failed_cmd" "blocked"
       echo "Verification FAILED (attempt $attempt/$max_attempts — limit reached)."
       echo "Task is now BLOCKED."
     else
-      _oh_write_status "$task_dir" "$id" "fixing" "$attempt" "false" "$verify_cmd" "null"
+      _oh_write_status "$task_dir" "$id" "fixing" "$attempt" "false" "$failed_cmd" "null"
       echo "Verification FAILED (attempt $attempt/$max_attempts)."
       echo "Status: fixing. Fix the issue and run 'openharness verify' again."
     fi
@@ -547,6 +758,45 @@ EOF
   fi
   _oh_write_status "$task_dir" "$id" "$final_state" "$attempt" "$vp" "" "$final_state"
 
+  # Write repo-level HANDOFF.md for session continuity
+  local root
+  root="$(git rev-parse --show-toplevel 2>/dev/null || echo ".")"
+  local now
+  now="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  local task_title
+  task_title="$(grep -m1 '^# Task:' "$task_dir/task.md" 2>/dev/null | sed 's/^# Task: *//' || echo "$id")"
+
+  cat > "$root/.openharness/HANDOFF.md" <<EOF
+# OpenHarness — Session Handoff
+
+**Last updated:** $now
+**Task:** $id
+**Title:** $task_title
+**Final state:** $final_state
+
+## What Was Done
+
+See task artifacts: \`.openharness/tasks/$id/\`
+- \`task.md\` — original goal and constraints
+- \`plan.md\` — implementation approach
+- \`verify.md\` — verification evidence
+- \`handoff.md\` — handoff summary
+
+## Pending Work
+
+<!-- Review and update for the next session -->
+
+## Next Steps
+
+$(if [ "$final_state" = "ready_for_human_review" ]; then
+  echo "- Run \`openharness pr\` to create a pull request"
+  echo "- Or run \`openharness commit\` to commit and deliver"
+else
+  echo "- Task is $final_state — review \`.openharness/tasks/$id/status.json\`"
+fi)
+EOF
+
   echo "Handoff complete: $final_state"
   echo "Summary: $task_dir/handoff.md"
+  echo "Session continuity: .openharness/HANDOFF.md"
 }

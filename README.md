@@ -8,6 +8,8 @@ idea → task → plan → implement → verify → commit → PR
 
 OpenHarness takes your coding agent from ad-hoc code generation to a constrained, evidence-based delivery pipeline. It enforces sequencing at the platform level using hooks — the agent cannot skip steps even if it wants to.
 
+**v0.3 — Structured intake, layered verification, session continuity.**
+
 **What it does:** Owns the delivery path from "task is clear enough" to "PR is ready for review."
 
 **What it doesn't do:** Brainstorming, memory, or conversation management. Those belong to other tools (Superpowers, claude-mem, etc.).
@@ -60,9 +62,13 @@ openharness init
 ```
 
 Creates:
-- `.openharness/` — config, rules, tasks directory
+- `.openharness/` — config, INSTRUCTIONS.md, tasks directory
+- `.openharness/INSTRUCTIONS.md` — consolidated agent instructions
 - `.claude/settings.local.json` — hook configuration
-- `AGENTS.md` section — agent lifecycle instructions
+- `AGENTS.md` section — thin adapter pointing to INSTRUCTIONS.md
+- `CLAUDE.md` section — thin adapter pointing to INSTRUCTIONS.md (if file exists)
+
+**Migration:** Running `init` on an existing repo adds `INSTRUCTIONS.md` and marks the old `REPO_GUIDE.md` / `RULES.md` files as deprecated.
 
 ## CLI Reference
 
@@ -72,8 +78,12 @@ Creates:
 |---------|-------------|
 | `start-task "<goal>"` | Create a new task, set status to `intake` |
 | `advance` | Move task forward: intake → planning → implementing |
-| `verify` | Run verification commands, record evidence |
-| `handoff` | Produce final summary (legacy, before delivery tail) |
+| `verify` | Run verification commands (default: standard layer) |
+| `verify --fast` | Run fast layer only |
+| `verify --full` | Run all layers cumulatively (fast + standard + full) |
+| `verify --layer <name>` | Run up to the specified layer |
+| `verify --only` | Run only the target layer (skip lower layers) |
+| `handoff` | Produce final summary, write `.openharness/HANDOFF.md` |
 
 ### Interactive Verification
 
@@ -134,6 +144,67 @@ intake → planning → implementing → verifying
 - **blocked** — max verification attempts exceeded (terminal)
 - **ready_for_human_review** — verification passed
 - **delivered** — committed and ready for PR
+
+## Intake Gate
+
+Before `advance` moves a task from `intake` to `planning`, `task.md` must contain:
+
+- **`## Done Condition`** — specific, measurable criteria for when the task is complete
+- **`## Verification Path`** — how verification will be run (e.g. "unit tests", "interactive verify")
+
+These sections are pre-filled in the task.md template. Fill them before calling advance.
+
+```markdown
+## Done Condition
+All unit tests pass and the search UI renders correctly in the demo.
+
+## Verification Path
+unit tests + interactive verify
+```
+
+## Layered Verification
+
+Configure verification in layers — fast checks first, full suite later:
+
+```json
+{
+  "verify_layers": {
+    "fast": ["pnpm typecheck", "pnpm lint"],
+    "standard": ["pnpm test"],
+    "full": ["pnpm test:e2e"],
+    "manual": ["Check the search UI renders correctly", "Verify dark mode"]
+  },
+  "default_verify_layer": "standard"
+}
+```
+
+Layers are cumulative by default: `--layer standard` runs `fast` + `standard`. The `manual` layer is printed as a checklist, never executed as shell commands.
+
+```bash
+openharness verify              # up to default_verify_layer
+openharness verify --fast       # fast layer only
+openharness verify --full       # all layers
+openharness verify --layer full --only   # full layer only, skip others
+```
+
+**Backward compatibility:** The old `verify_command` field maps automatically to `verify_layers.standard`.
+
+## Agent Instructions
+
+`init` creates `.openharness/INSTRUCTIONS.md` — a single canonical file with all lifecycle rules, task commands, and enforcement details. AGENTS.md and CLAUDE.md become thin adapters pointing to it:
+
+```markdown
+## OpenHarness
+See `.openharness/INSTRUCTIONS.md` for full development instructions.
+```
+
+This keeps AGENTS.md/CLAUDE.md concise while preserving a single source of truth for harness instructions.
+
+## Session Continuity
+
+After each `handoff`, OpenHarness writes `.openharness/HANDOFF.md` — a repo-level snapshot of what was done and what's pending. The session-start hook notifies the agent when HANDOFF.md exists.
+
+HANDOFF.md is committed to the repo (not gitignored), providing continuity across agent sessions and team members.
 
 ## Interactive Verification
 
@@ -253,7 +324,13 @@ Edit `.openharness/config.json`:
 
 ```json
 {
-  "verify_command": "pnpm test",
+  "verify_layers": {
+    "fast": ["pnpm typecheck", "pnpm lint"],
+    "standard": ["pnpm test"],
+    "full": ["pnpm test:e2e"],
+    "manual": ["Check the UI renders correctly", "Verify dark mode"]
+  },
+  "default_verify_layer": "standard",
   "cleanup_command": "pnpm lint --fix && pnpm format",
   "max_verify_attempts": 3,
   "pr_base_branch": "main",
@@ -267,13 +344,19 @@ Edit `.openharness/config.json`:
 
 | Field | Description |
 |-------|-------------|
-| `verify_command` | Command to validate the project |
+| `verify_layers.fast` | Quick checks (typecheck, lint) |
+| `verify_layers.standard` | Standard test suite |
+| `verify_layers.full` | Full suite including e2e |
+| `verify_layers.manual` | Checklist items (printed, not executed) |
+| `default_verify_layer` | Layer used by `verify` with no flags |
 | `cleanup_command` | Lint/format command (optional) |
 | `max_verify_attempts` | Retries before marking task blocked |
 | `pr_base_branch` | Target branch for PRs |
 | `interactive_verify.dev_server_command` | Command to start dev server (optional) |
 | `interactive_verify.dev_server_url` | URL to poll for server readiness |
 | `interactive_verify.dev_server_timeout` | Seconds to wait for server startup |
+
+**Backward compat:** `"verify_command": "pnpm test"` still works — it maps to `verify_layers.standard`.
 
 ## Enforcement
 

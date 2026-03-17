@@ -1,5 +1,10 @@
 {
-  "verify_command": "echo 'No verify command configured. Edit .openharness/config.json'",
+  "verify_layers": {
+    "fast": [],
+    "standard": ["echo 'No verify command configured. Edit .openharness/config.json'"],
+    "full": []
+  },
+  "default_verify_layer": "standard",
   "cleanup_command": "",
   "max_verify_attempts": 3,
   "pr_base_branch": "main",

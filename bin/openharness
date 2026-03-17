@@ -48,7 +48,7 @@ EOF
 }
 
 version() {
-  echo "openharness 0.2.0"
+  echo "openharness 0.3.0"
 }
 
 case "${1:-}" in

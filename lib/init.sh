@@ -22,6 +22,21 @@ oh_init() {
   local oh_dir="$repo_root/.openharness"
 
   if [ -d "$oh_dir" ] && [ -f "$oh_dir/config.json" ]; then
+    # Migrate existing repo: add INSTRUCTIONS.md if missing
+    if [ ! -f "$oh_dir/INSTRUCTIONS.md" ]; then
+      cp "$OPENHARNESS_ROOT/templates/.openharness/INSTRUCTIONS.md" "$oh_dir/INSTRUCTIONS.md"
+      echo "Migrated: .openharness/INSTRUCTIONS.md (consolidated agent instructions)"
+      # Add deprecated header to old files to redirect agents
+      local deprecated_header="<!-- DEPRECATED: This file is superseded by INSTRUCTIONS.md. Kept for reference. -->"
+      for old_file in "$oh_dir/REPO_GUIDE.md" "$oh_dir/RULES.md"; do
+        if [ -f "$old_file" ] && ! grep -q 'DEPRECATED' "$old_file" 2>/dev/null; then
+          local tmp_file="${old_file}.tmp"
+          printf '%s\n\n' "$deprecated_header" > "$tmp_file"
+          cat "$old_file" >> "$tmp_file"
+          mv "$tmp_file" "$old_file"
+        fi
+      done
+    fi
     echo "OpenHarness already initialized in $repo_root"
     return 0
   fi
@@ -33,6 +48,7 @@ oh_init() {
 
   # Copy templates
   cp "$OPENHARNESS_ROOT/templates/.openharness/config.json" "$oh_dir/config.json"
+  cp "$OPENHARNESS_ROOT/templates/.openharness/INSTRUCTIONS.md" "$oh_dir/INSTRUCTIONS.md"
   cp "$OPENHARNESS_ROOT/templates/.openharness/REPO_GUIDE.md" "$oh_dir/REPO_GUIDE.md"
   cp "$OPENHARNESS_ROOT/templates/.openharness/RULES.md" "$oh_dir/RULES.md"
   touch "$oh_dir/tasks/.gitkeep"
@@ -47,18 +63,10 @@ oh_init() {
     printf '# OpenHarness — local task artifacts\n.openharness/tasks/*/status.json\n.openharness/tasks/*/status.json.tmp\n.openharness/tasks/*/verify.md\n.openharness/tasks/*/screenshots/\n.openharness/tasks/*/.dev-server.pid\n.openharness/active-task\n' > "$gitignore"
   fi
 
-  # AGENTS.md integration
+  # AGENTS.md integration — thin adapter pointing to INSTRUCTIONS.md
   local agents_file="$repo_root/AGENTS.md"
-  local agents_block="## OpenHarness
-
-This repository uses [OpenHarness](https://github.com/user/openharness) for structured development.
-
-Before implementing any changes:
-1. Run \`openharness status\` to check for an active task
-2. If no task exists, run \`openharness start-task \"<goal>\"\`
-3. Follow the harness lifecycle: intake → planning → implementing → verifying → handoff
-
-See \`.openharness/RULES.md\` for enforcement rules."
+  local agents_block
+  agents_block="$(cat "$OPENHARNESS_ROOT/templates/AGENTS.openharness.md")"
 
   if [ -f "$agents_file" ]; then
     if ! grep -q 'OpenHarness' "$agents_file" 2>/dev/null; then
@@ -68,6 +76,18 @@ See \`.openharness/RULES.md\` for enforcement rules."
   else
     printf '%s\n' "$agents_block" > "$agents_file"
     echo "Created: AGENTS.md"
+  fi
+
+  # CLAUDE.md integration — thin adapter pointing to INSTRUCTIONS.md
+  local claude_md="$repo_root/CLAUDE.md"
+  local claude_block
+  claude_block="$(cat "$OPENHARNESS_ROOT/templates/CLAUDE.openharness.md")"
+
+  if [ -f "$claude_md" ]; then
+    if ! grep -q 'OpenHarness' "$claude_md" 2>/dev/null; then
+      printf '\n%s\n' "$claude_block" >> "$claude_md"
+      echo "Updated: CLAUDE.md (appended OpenHarness section)"
+    fi
   fi
 
   # Claude Code hooks integration via .claude/settings.local.json
