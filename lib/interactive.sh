@@ -155,6 +155,21 @@ _oh_interactive_start() {
 
   echo "Dev server ready (PID: $server_pid)"
 
+  # Ensure browse binary is built
+  local oh_root
+  oh_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  local browse_bin="$oh_root/browse/dist/browse"
+  if [ ! -f "$browse_bin" ]; then
+    echo "Browse binary not found. Building..."
+    (cd "$oh_root/browse" && ./setup)
+    if [ ! -f "$browse_bin" ]; then
+      echo "openharness interactive-verify: failed to build browse binary" >&2
+      _oh_kill_pid "$pid_file"
+      exit 1
+    fi
+  fi
+  export B="$browse_bin"
+
   # Create screenshots directory
   mkdir -p "$task_dir/screenshots"
 
@@ -176,8 +191,9 @@ _oh_interactive_start() {
   echo "Screenshots dir: $task_dir/screenshots/"
   echo "Server URL: $dev_url"
   echo "Server PID: $server_pid"
+  echo "Browse binary: $B"
   echo ""
-  echo "Use Playwright MCP tools to drive the browser."
+  echo "Use \$B commands to drive the browser (e.g., \$B goto $dev_url)."
   echo "Write results to: $task_dir/verify-interactive-evidence.md"
   echo "When done, run: openharness interactive-verify complete <pass|fail>"
 }
@@ -232,7 +248,7 @@ _oh_interactive_complete() {
   verify_section="# Verification Evidence
 
 ## Interactive Verification — Attempt $attempt
-- **Type:** Browser-based (Playwright)
+- **Type:** Browser-based (browse)
 - **Result:** $(echo "$result" | tr '[:lower:]' '[:upper:]')
 - **Timestamp:** $now
 "

@@ -1,0 +1,18 @@
+{
+  "name": "@openharness/browse",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build --compile src/cli.ts --outfile dist/browse",
+    "dev": "bun run src/cli.ts"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0",
+    "diff": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/diff": "^6.0.0",
+    "@types/bun": "latest"
+  }
+}

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+echo "[browse] Installing dependencies..."
+bun install
+
+echo "[browse] Installing Playwright Chromium..."
+bunx playwright install chromium
+
+echo "[browse] Building binary..."
+mkdir -p dist
+bun build --compile src/cli.ts --outfile dist/browse
+
+echo "[browse] Build complete: $SCRIPT_DIR/dist/browse"
+echo "[browse] Test: ./dist/browse goto https://example.com"
